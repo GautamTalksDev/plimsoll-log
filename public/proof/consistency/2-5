@@ -1,0 +1,11 @@
+{
+  "old_size": 2,
+  "new_size": 5,
+  "old_root": "fcd62f156dbd30639c9f8df9ffd3a433fc7f4902a957e576eea8d7045c48db5e",
+  "new_root": "112cc07022cb023996acde21e485e9a93312813ad0da3a911903b960934e1e97",
+  "audit_path": [
+    "418471481903f7bfbde1ae4a9674fe3e59414def986c4979b9f6f4d06e371301",
+    "e53e0039f2319cdd28c614cd2148624dee87eb09b6c9013d8f35655d7a68af57"
+  ],
+  "log_public_key": "/kOi5dHTbdD3g/DNPO2P2L2QRrGPbg1emwGFVouW8JQ="
+}

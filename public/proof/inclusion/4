@@ -1,12 +1,10 @@
 {
   "inclusion_proof": {
-    "index": 0,
+    "index": 4,
     "tree_size": 5,
-    "leaf_hash": "51ce5719798fc88fdac76694bc96f2aa6110f5cdff18f189a32447bc407bbd23",
+    "leaf_hash": "e53e0039f2319cdd28c614cd2148624dee87eb09b6c9013d8f35655d7a68af57",
     "audit_path": [
-      "8bac46d0c3fae03727422a1decc69ecac913e0112d5ce7911fcad0937fd50337",
-      "418471481903f7bfbde1ae4a9674fe3e59414def986c4979b9f6f4d06e371301",
-      "e53e0039f2319cdd28c614cd2148624dee87eb09b6c9013d8f35655d7a68af57"
+      "4396399510460aa5493ff86d115a1e698c3c9df2311da626988b118992942f4d"
     ],
     "root_hash": "112cc07022cb023996acde21e485e9a93312813ad0da3a911903b960934e1e97"
   },

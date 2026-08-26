@@ -10,6 +10,16 @@
     "supersedes": "",
     "leaf_hash": "050de871da41b17e4abe6fb3e230ebae1f71037dd83d3155bb92c34ec67fa9c3"
   },
-  "attempts": [],
+  "attempts": [
+    {
+      "index": 4,
+      "attempt_no": 1,
+      "seal_hash": "sha256:f7bca55100ab0a4bf704ff76cc3adbb1c95a2b9b6874c104ac998f22332f03c1",
+      "result_digest": "sha256:4899461084d924253d94673c91d375710fd9e44a38fe0969abf4fab3b711f633",
+      "verdict": "pass",
+      "submitted_at": 1787780653,
+      "leaf_hash": "e53e0039f2319cdd28c614cd2148624dee87eb09b6c9013d8f35655d7a68af57"
+    }
+  ],
   "log_public_key": "/kOi5dHTbdD3g/DNPO2P2L2QRrGPbg1emwGFVouW8JQ="
 }

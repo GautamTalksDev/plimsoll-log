@@ -1,12 +1,13 @@
 {
   "old_size": 3,
-  "new_size": 4,
+  "new_size": 5,
   "old_root": "7fe9439bcaeb6a7aceaac9c50f0c95500b766b11b074269a5eae9a63097979d8",
-  "new_root": "4396399510460aa5493ff86d115a1e698c3c9df2311da626988b118992942f4d",
+  "new_root": "112cc07022cb023996acde21e485e9a93312813ad0da3a911903b960934e1e97",
   "audit_path": [
     "198cc04cba83e14ae7faafb1c4cf6d17802d75923e1779d87a758816fc198fde",
     "050de871da41b17e4abe6fb3e230ebae1f71037dd83d3155bb92c34ec67fa9c3",
-    "fcd62f156dbd30639c9f8df9ffd3a433fc7f4902a957e576eea8d7045c48db5e"
+    "fcd62f156dbd30639c9f8df9ffd3a433fc7f4902a957e576eea8d7045c48db5e",
+    "e53e0039f2319cdd28c614cd2148624dee87eb09b6c9013d8f35655d7a68af57"
   ],
   "log_public_key": "/kOi5dHTbdD3g/DNPO2P2L2QRrGPbg1emwGFVouW8JQ="
 }
