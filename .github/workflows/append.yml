@@ -23,7 +23,7 @@ permissions:
 env:
   # Pin to a GautamTalksDev/plimsoll release that ships plimsoll-append and
   # plimsoll-static. Bump deliberately after verifying the release with cosign.
-  PLIMSOLL_RELEASE: v0.1.2
+  PLIMSOLL_RELEASE: v0.1.3
   PLIMSOLL_REPO: GautamTalksDev/plimsoll
   BASE_URL: https://plimsoll.gautamkhosla.com
 
