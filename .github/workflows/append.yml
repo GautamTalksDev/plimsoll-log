@@ -135,6 +135,7 @@ jobs:
             -db log.sqlite \
             -out public \
             -key keys/log-public.pem \
+            -spec SPEC-PREREG.md \
             -base-url "${BASE_URL}"
 
       - name: Commit and push

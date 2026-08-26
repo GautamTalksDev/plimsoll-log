@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Specification · PLIMSOLL</title>
+<link rel="stylesheet" href="/site.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head><body>
+<nav><a href="/">Problem</a><a href="/seals">Seals</a><a href="/verify/">Verify</a><a href="/spec">Spec</a><a href="/key">Public key</a><a href="/run-your-own">Run your own</a></nav>
+
+<h1>Pre-registration specification</h1>
+<div><h1>PLIMSOLL Pre-Registration and Attestation Specification</h1><p><strong>Version:</strong> prereg-v1</p><p><strong>Date:</strong> 2026-08-25</p><p><strong>License:</strong> [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)</p><p><strong>SPDX-License-Identifier:</strong> CC0-1.0</p><p><strong>DOI:</strong> [10.5281/zenodo.22107451](https://doi.org/10.5281/zenodo.22107451) (this version) · [10.5281/zenodo.22107450](https://doi.org/10.5281/zenodo.22107450) (all versions)</p><p>This document is a specification. It is not a user guide and not a</p><p>description of one codebase. A conforming implementation MAY be written</p><p>in any language. Normative keywords are as in RFC 2119: MUST, MUST NOT,</p><p>SHOULD, MAY.</p><p>To the extent possible under law, the author has waived all copyright</p><p>and related or neighboring rights to this specification under CC0 1.0.</p><hr><h2>1. Purpose</h2><p>A <strong>seal</strong> is a pre-registration: a decision rule and the identities of</p><p>the dataset, harness, and system under test, declared <strong>before</strong> results</p><p>are known. An <strong>attestation</strong> is a later claim that a particular attempt</p><p>was run against a named seal. A <strong>log</strong> records seals and attestations</p><p>in append-only order and assigns attempt numbers.</p><p>This specification defines the objects, the decision-rule language, the</p><p>percentile method, canonicalization, signing, attempt numbering, and</p><p>supersession. It does not define how to run an evaluation, how to score</p><p>a model, or which metrics are &#34;correct.&#34;</p><p>A conforming implementation MUST transmit only digests and metadata. It</p><p>MUST NOT receive, store, or transmit datasets, models, prompts, or</p><p>outputs. See §10.</p><hr><h2>2. Terminology</h2><table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody><tr><td>digest</td><td>The string <code>sha256:</code> followed by 64 lowercase hex characters. This is the SHA-256 of named canonical bytes, not of raw user files.</td></tr><tr><td>seal</td><td>The pre-registration object in §4. Once hashed and logged, it is immutable.</td></tr><tr><td>attestation</td><td>The attempt object in §7. It names a seal by digest.</td></tr><tr><td>attempt number</td><td>A positive integer assigned <strong>only</strong> by the log, monotonically per seal. Clients MUST NOT choose it.</td></tr><tr><td>primary metric</td><td>The metric named as the public claim. It MUST appear in <code>metrics[]</code> and in <code>decision_rule.expression</code>.</td></tr></tbody></table><hr><h2>3. Canonicalization</h2><p>Seals and attestations that are hashed or signed MUST first be converted</p><p>to UTF-8 JSON, then canonicalized as <strong>plimsoll-canon-v1</strong>:</p><p>1. Reject documents larger than 1 MiB.</p><p>2. Parse JSON.</p><p>3. NFC-normalize every JSON <strong>string value</strong> (not required of keys).</p><p>4. In string values, replace CRLF with LF, then remaining CR with LF.</p><p>5. Do not strip zero-width, bidi, or control characters.</p><p>6. Serialize with RFC 8785 JCS (UTF-16 code-unit key order, no</p><p>   insignificant whitespace, JCS number serialization).</p><p>7. Prefix the JCS bytes with the eight-bit string <code>plimsoll-canon-v1\n</code>.</p><p>The <strong>canonical hash</strong> of a JSON document is <code>sha256:</code> plus the lowercase</p><p>hex SHA-256 of those prefixed bytes.</p><p>Dataset identity MUST use <strong>plimsoll-dataset-v1</strong>, not plimsoll-canon-v1:</p><p>canonicalize each row as plimsoll-canon-v1, sort those byte sequences</p><p>lexicographically as a <strong>multiset</strong> (duplicate rows are retained), join</p><p>with <code>0x0A</code>, prefix <code>plimsoll-dataset-v1\n</code>, then SHA-256. Row order</p><p>MUST NOT affect the digest. A dataset that contains a duplicated row</p><p>MUST hash differently from the same rows with that duplicate removed.</p><p>Callers MUST record row count <code>n</code> as separate metadata; it is not</p><p>inferred from the digest.</p><p>JSON numbers in JCS follow IEEE 754 binary64. Metric <strong>values</strong> used in</p><p>comparisons MUST NOT be parsed through binary64; they MUST be exact</p><p>decimals from their original lexical form (see §6.3).</p><hr><h2>4. Seal object</h2><p><code>plimsoll_version</code> for this document is the string <code>prereg-v1</code>.</p><p><code>canon_version</code> MUST be <code>plimsoll-canon-v1</code>.</p><p>Unknown <strong>top-level</strong> members MUST be rejected. v1 has no forward</p><p>compatibility. Nested objects in the schema below also use</p><p><code>additionalProperties: false</code>.</p><p>Optional member <code>supersedes</code> is omitted unless this seal replaces</p><p>another (see §9).</p><h3>4.1 JSON Schema (normative)</h3><pre><code>{
+  &#34;$schema&#34;: &#34;https://json-schema.org/draft/2020-12/schema&#34;,
+  &#34;$id&#34;: &#34;https://plimsoll.gautamkhosla.com/spec/prereg-v1/seal.json&#34;,
+  &#34;title&#34;: &#34;PLIMSOLL seal (prereg-v1)&#34;,
+  &#34;type&#34;: &#34;object&#34;,
+  &#34;additionalProperties&#34;: false,
+  &#34;required&#34;: [
+    &#34;plimsoll_version&#34;,
+    &#34;created_at&#34;,
+    &#34;subject&#34;,
+    &#34;dataset&#34;,
+    &#34;harness&#34;,
+    &#34;metrics&#34;,
+    &#34;decision_rule&#34;,
+    &#34;exclusions&#34;,
+    &#34;planned_attempts&#34;,
+    &#34;analysis_plan&#34;,
+    &#34;canon_version&#34;
+  ],
+  &#34;properties&#34;: {
+    &#34;plimsoll_version&#34;: { &#34;const&#34;: &#34;prereg-v1&#34; },
+    &#34;canon_version&#34;: { &#34;const&#34;: &#34;plimsoll-canon-v1&#34; },
+    &#34;created_at&#34;: {
+      &#34;type&#34;: &#34;string&#34;,
+      &#34;description&#34;: &#34;RFC 3339 timestamp in UTC, suffix Z.&#34;
+    },
+    &#34;subject&#34;: {
+      &#34;type&#34;: &#34;object&#34;,
+      &#34;additionalProperties&#34;: false,
+      &#34;required&#34;: [&#34;name&#34;, &#34;system_under_test&#34;],
+      &#34;properties&#34;: {
+        &#34;name&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+        &#34;system_under_test&#34;: {
+          &#34;type&#34;: &#34;object&#34;,
+          &#34;additionalProperties&#34;: false,
+          &#34;required&#34;: [&#34;model&#34;, &#34;prompt_sha256&#34;, &#34;config_sha256&#34;],
+          &#34;properties&#34;: {
+            &#34;model&#34;: {
+              &#34;type&#34;: &#34;string&#34;,
+              &#34;minLength&#34;: 1,
+              &#34;description&#34;: &#34;A name or identifier, never model weights.&#34;
+            },
+            &#34;prompt_sha256&#34;: { &#34;$ref&#34;: &#34;#/$defs/digest&#34; },
+            &#34;config_sha256&#34;: { &#34;$ref&#34;: &#34;#/$defs/digest&#34; }
+          }
+        }
+      }
+    },
+    &#34;dataset&#34;: {
+      &#34;type&#34;: &#34;object&#34;,
+      &#34;additionalProperties&#34;: false,
+      &#34;required&#34;: [&#34;sha256&#34;, &#34;n&#34;, &#34;sampling&#34;, &#34;held_out&#34;],
+      &#34;properties&#34;: {
+        &#34;sha256&#34;: { &#34;$ref&#34;: &#34;#/$defs/digest&#34; },
+        &#34;n&#34;: { &#34;type&#34;: &#34;integer&#34;, &#34;minimum&#34;: 1 },
+        &#34;sampling&#34;: {
+          &#34;type&#34;: &#34;string&#34;,
+          &#34;enum&#34;: [&#34;exhaustive&#34;, &#34;random&#34;, &#34;stratified&#34;, &#34;other&#34;]
+        },
+        &#34;held_out&#34;: { &#34;type&#34;: &#34;boolean&#34; }
+      }
+    },
+    &#34;harness&#34;: {
+      &#34;type&#34;: &#34;object&#34;,
+      &#34;additionalProperties&#34;: false,
+      &#34;required&#34;: [&#34;tool&#34;, &#34;version&#34;, &#34;config_sha256&#34;],
+      &#34;properties&#34;: {
+        &#34;tool&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+        &#34;version&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+        &#34;config_sha256&#34;: { &#34;$ref&#34;: &#34;#/$defs/digest&#34; }
+      }
+    },
+    &#34;metrics&#34;: {
+      &#34;type&#34;: &#34;array&#34;,
+      &#34;minItems&#34;: 1,
+      &#34;items&#34;: {
+        &#34;type&#34;: &#34;object&#34;,
+        &#34;additionalProperties&#34;: false,
+        &#34;required&#34;: [&#34;id&#34;, &#34;name&#34;, &#34;definition_uri&#34;, &#34;direction&#34;],
+        &#34;properties&#34;: {
+          &#34;id&#34;: {
+            &#34;type&#34;: &#34;string&#34;,
+            &#34;pattern&#34;: &#34;^[A-Za-z][A-Za-z0-9_]*$&#34;,
+            &#34;not&#34;: { &#34;enum&#34;: [&#34;AND&#34;, &#34;OR&#34;, &#34;NOT&#34;] }
+          },
+          &#34;name&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+          &#34;definition_uri&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+          &#34;direction&#34;: {
+            &#34;type&#34;: &#34;string&#34;,
+            &#34;enum&#34;: [&#34;higher_is_better&#34;, &#34;lower_is_better&#34;]
+          }
+        }
+      }
+    },
+    &#34;decision_rule&#34;: {
+      &#34;type&#34;: &#34;object&#34;,
+      &#34;additionalProperties&#34;: false,
+      &#34;required&#34;: [
+        &#34;expression&#34;,
+        &#34;primary_metric&#34;,
+        &#34;threshold&#34;,
+        &#34;comparison&#34;,
+        &#34;precision&#34;
+      ],
+      &#34;properties&#34;: {
+        &#34;expression&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+        &#34;primary_metric&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 },
+        &#34;threshold&#34;: {
+          &#34;type&#34;: &#34;string&#34;,
+          &#34;description&#34;: &#34;Lexical decimal. MUST be a JSON string, never a JSON number.&#34;,
+          &#34;pattern&#34;: &#34;^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$&#34;
+        },
+        &#34;comparison&#34;: {
+          &#34;type&#34;: &#34;string&#34;,
+          &#34;enum&#34;: [&#34;&gt;=&#34;, &#34;&lt;=&#34;, &#34;&gt;&#34;, &#34;&lt;&#34;, &#34;==&#34;, &#34;!=&#34;]
+        },
+        &#34;precision&#34;: { &#34;type&#34;: &#34;integer&#34;, &#34;minimum&#34;: 1, &#34;maximum&#34;: 12 }
+      }
+    },
+    &#34;exclusions&#34;: {
+      &#34;type&#34;: &#34;array&#34;,
+      &#34;items&#34;: { &#34;type&#34;: &#34;string&#34; }
+    },
+    &#34;planned_attempts&#34;: { &#34;type&#34;: &#34;integer&#34;, &#34;minimum&#34;: 1 },
+    &#34;analysis_plan&#34;: { &#34;type&#34;: &#34;string&#34; },
+    &#34;supersedes&#34;: {
+      &#34;type&#34;: &#34;object&#34;,
+      &#34;additionalProperties&#34;: false,
+      &#34;required&#34;: [&#34;seal_hash&#34;, &#34;reason&#34;],
+      &#34;properties&#34;: {
+        &#34;seal_hash&#34;: { &#34;$ref&#34;: &#34;#/$defs/digest&#34; },
+        &#34;reason&#34;: { &#34;type&#34;: &#34;string&#34;, &#34;minLength&#34;: 1 }
+      }
+    }
+  },
+  &#34;$defs&#34;: {
+    &#34;digest&#34;: {
+      &#34;type&#34;: &#34;string&#34;,
+      &#34;pattern&#34;: &#34;^sha256:[0-9a-f]{64}$&#34;
+    }
+  }
+}
+</code></pre><h3>4.2 Field semantics</h3><ul><li><code>created_at</code> is when the seal was authored, not when it was logged.</li><li><code>subject.system_under_test.model</code> identifies a system. It is not the</li></ul><p>  model file. <code>prompt_sha256</code> is the plimsoll-canon-v1 digest of the</p><p>  prompt document the user hashed locally. <code>config_sha256</code> is the same</p><p>  for the non-prompt configuration document.</p><ul><li><code>dataset.sha256</code> is a <strong>plimsoll-dataset-v1</strong> digest computed on the</li></ul><p>  user&#39;s machine. <code>n</code> is the row count of that dataset and MUST be ≥ 1.</p><ul><li><code>metrics[].id</code> MUST be unique within the array.</li><li><code>decision_rule.expression</code> is the complete predicate (§5). Evaluation</li></ul><p>  of the predicate against results is out of scope for this document</p><p>  (it is a later conformance point). Parse and reference checks are in</p><p>  scope.</p><ul><li><code>decision_rule.primary_metric</code> MUST equal some <code>metrics[].id</code> and MUST</li></ul><p>  occur as a metric identifier in <code>expression</code>.</p><ul><li><code>decision_rule.threshold</code> is the lexical decimal of the public claim,</li></ul><p>  compared using <code>decision_rule.comparison</code> at <code>decision_rule.precision</code>.</p><p>  It is metadata for the claim. The expression is still the full rule.</p><ul><li><code>decision_rule.precision</code> is the number of digits after the decimal</li></ul><p>  point used when interpreting metric values and <code>threshold</code> as fixed-</p><p>  precision decimals. It MUST be an integer in <code>1..12</code> inclusive.</p><ul><li><code>exclusions</code> are planned, human-readable exclusion rules. They are</li></ul><p>  not a programming language.</p><ul><li><code>analysis_plan</code> is prose. Implementations MUST NOT execute it.</li><li><code>planned_attempts</code> is the author&#39;s declared maximum number of</li></ul><p>  attempts they intend to log. The log MAY still accept further</p><p>  attestations; the field is evidence of intent, not a cap the log</p><p>  enforces unless an operator policy says otherwise.</p><h3>4.3 Example (informative)</h3><pre><code>{
+  &#34;plimsoll_version&#34;: &#34;prereg-v1&#34;,
+  &#34;created_at&#34;: &#34;2026-08-25T00:00:00Z&#34;,
+  &#34;subject&#34;: {
+    &#34;name&#34;: &#34;example-claim&#34;,
+    &#34;system_under_test&#34;: {
+      &#34;model&#34;: &#34;example-model-id&#34;,
+      &#34;prompt_sha256&#34;: &#34;sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&#34;,
+      &#34;config_sha256&#34;: &#34;sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&#34;
+    }
+  },
+  &#34;dataset&#34;: {
+    &#34;sha256&#34;: &#34;sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&#34;,
+    &#34;n&#34;: 100,
+    &#34;sampling&#34;: &#34;exhaustive&#34;,
+    &#34;held_out&#34;: true
+  },
+  &#34;harness&#34;: {
+    &#34;tool&#34;: &#34;example-harness&#34;,
+    &#34;version&#34;: &#34;1.0.0&#34;,
+    &#34;config_sha256&#34;: &#34;sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd&#34;
+  },
+  &#34;metrics&#34;: [
+    {
+      &#34;id&#34;: &#34;acc&#34;,
+      &#34;name&#34;: &#34;accuracy&#34;,
+      &#34;definition_uri&#34;: &#34;https://example.invalid/metrics/accuracy&#34;,
+      &#34;direction&#34;: &#34;higher_is_better&#34;
+    }
+  ],
+  &#34;decision_rule&#34;: {
+    &#34;expression&#34;: &#34;acc.mean &gt;= 0.82&#34;,
+    &#34;primary_metric&#34;: &#34;acc&#34;,
+    &#34;threshold&#34;: &#34;0.82&#34;,
+    &#34;comparison&#34;: &#34;&gt;=&#34;,
+    &#34;precision&#34;: 6
+  },
+  &#34;exclusions&#34;: [],
+  &#34;planned_attempts&#34;: 3,
+  &#34;analysis_plan&#34;: &#34;Report acc.mean against the sealed threshold. No post-hoc metric swap.&#34;,
+  &#34;canon_version&#34;: &#34;plimsoll-canon-v1&#34;
+}
+</code></pre><hr><h2>5. Decision-rule expression grammar</h2><p>The language is deliberately too small to express anything clever. A</p><p>conforming parser MUST reject anything not generated by this grammar.</p><p>There is <strong>no arithmetic</strong>, <strong>no function calls</strong>, and <strong>no variables</strong>.</p><h3>5.1 Lexer</h3><p>Input is Unicode. Implementations SHOULD reject the expression if it is</p><p>not valid UTF-8.</p><p>Tokens:</p><ul><li>whitespace: <code>U+0020</code>, <code>U+0009</code>, <code>U+000A</code>, <code>U+000D</code> — skipped</li><li><code>AND</code>, <code>OR</code>, <code>NOT</code> — exactly those bytes, case-sensitive</li><li><code>&gt;=</code> <code>&lt;=</code> <code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> — two-character operators are maximal munch</li><li><code>(</code> <code>)</code> <code>.</code></li><li>identifier: <code>[A-Za-z][A-Za-z0-9_]*</code> that is not <code>AND</code>, <code>OR</code>, or <code>NOT</code></li><li>decimal literal: <code>-?(0|[1-9][0-9]*)(\.[0-9]+)?</code></li></ul><p>A hyphen-minus is part of a decimal literal if and only if it is</p><p>immediately followed by a digit. A hyphen in any other position is an</p><p>error (it is not subtraction).</p><p>The characters <code>+</code>, <code>*</code>, <code>/</code>, <code>%</code>, <code>^</code>, <code>[</code>, <code>]</code>, <code>{</code>, <code>}</code>, <code>,</code>, <code>&#39;</code>,</p><p><code>&#34;</code> and the ASCII letters of a call like <code>mean(</code> after an identifier</p><p>are errors.</p><h3>5.2 Grammar (EBNF)</h3><pre><code>expression   = or_expr ;
+or_expr      = and_expr { &#34;OR&#34; and_expr } ;
+and_expr     = not_expr { &#34;AND&#34; not_expr } ;
+not_expr     = &#34;NOT&#34; not_expr | primary ;
+primary      = &#34;(&#34; expression &#34;)&#34; | comparison ;
+comparison   = identifier comparator literal ;
+identifier   = metric_id &#34;.&#34; aggregate ;
+metric_id    = letter { letter | digit | &#34;_&#34; } ;
+aggregate    = &#34;mean&#34; | &#34;median&#34; | &#34;min&#34; | &#34;max&#34;
+             | &#34;p10&#34; | &#34;p50&#34; | &#34;p90&#34; | &#34;p95&#34;
+             | &#34;count&#34; | &#34;pass_rate&#34; ;
+comparator   = &#34;&gt;=&#34; | &#34;&lt;=&#34; | &#34;&gt;&#34; | &#34;&lt;&#34; | &#34;==&#34; | &#34;!=&#34; ;
+literal      = [&#34;-&#34;] digits [&#34;.&#34; digits] ;
+digits       = digit { digit } ;
+letter       = &#34;A&#34;…&#34;Z&#34; | &#34;a&#34;…&#34;z&#34; ;
+digit        = &#34;0&#34;…&#34;9&#34; ;
+</code></pre><p>Precedence, tightest first: <code>NOT</code>, then <code>AND</code>, then <code>OR</code>. All binary</p><p>boolean operators are left-associative. Comparisons do not chain:</p><p><code>a.mean &gt;= 1 &gt;= 0</code> is invalid.</p><p><code>metric_id</code> MUST match some <code>metrics[].id</code> when the expression is</p><p>validated in the context of a seal. The parser itself only checks</p><p>the grammar.</p><h3>5.3 What is forbidden (normative examples)</h3><p>Invalid:</p><pre><code>acc.mean + 0.01 &gt;= 0.82
+acc.mean &gt;= 0.8 + 0.02
+mean(acc) &gt;= 0.82
+acc.mean() &gt;= 0.82
+acc.mean &gt;= 0.82 * 1
+x = 0.82
+acc.mean &gt;= 0.82 AND
+</code></pre><p>Valid:</p><pre><code>acc.mean &gt;= 0.82
+acc.mean &gt;= 0.82 AND loss.max &lt;= 1.0
+NOT acc.pass_rate &lt; 0.5
+(acc.p50 &gt;= 0.7 OR acc.p90 &gt;= 0.8)
+</code></pre><hr><h2>6. Aggregates and percentiles</h2><p>Aggregates name a reduction over per-row metric values the user already</p><p>computed. This specification does not compute those per-row values.</p><table><thead><tr><th>Aggregate</th><th>Meaning</th></tr></thead><tbody><tr><td><code>mean</code></td><td>Arithmetic mean of the finite values</td></tr><tr><td><code>median</code></td><td>Nearest-rank 50th percentile (§6.1)</td></tr><tr><td><code>min</code></td><td>Minimum</td></tr><tr><td><code>max</code></td><td>Maximum</td></tr><tr><td><code>p10</code> <code>p50</code> <code>p90</code> <code>p95</code></td><td>Nearest-rank percentile (§6.1)</td></tr><tr><td><code>count</code></td><td>Number of finite values used</td></tr><tr><td><code>pass_rate</code></td><td>Fraction of rows whose per-row pass bit is true, in <code>[0, 1]</code></td></tr></tbody></table><h3>6.1 Nearest-rank percentile (normative)</h3><p>Let <code>n ≥ 1</code> be the number of finite observations, sorted in</p><p>non-decreasing order as <code>x[1] … x[n]</code> (1-based). For percentile <code>p</code></p><p>in <code>{10, 50, 90, 95}</code>:</p><pre><code>r = ceil(p / 100 * n)
+if r &lt; 1 then r = 1
+if r &gt; n then r = n
+result = x[r]
+</code></pre><p><code>ceil</code> is the mathematical ceiling on real numbers. There is **no</p><p>interpolation<strong> and </strong>no averaging of adjacent ranks**.</p><p>Boundary cases:</p><table><thead><tr><th>n</th><th>p</th><th>r</th><th>result</th></tr></thead><tbody><tr><td>0</td><td>any</td><td>undefined</td><td>MUST NOT produce a percentile. A later evaluator MUST fail closed.</td></tr><tr><td>1</td><td>10, 50, 90, 95</td><td>1</td><td><code>x[1]</code> (<code>ceil(0.10)=1</code>, …, <code>ceil(0.95)=1</code>)</td></tr><tr><td>2</td><td>50</td><td>1</td><td><code>x[1]</code>, <strong>not</strong> the mean of <code>x[1]</code> and <code>x[2]</code></td></tr><tr><td>10</td><td>10</td><td>1</td><td><code>x[1]</code></td></tr><tr><td>10</td><td>50</td><td>5</td><td><code>x[5]</code></td></tr><tr><td>10</td><td>90</td><td>9</td><td><code>x[9]</code></td></tr><tr><td>10</td><td>95</td><td>10</td><td><code>x[10]</code></td></tr></tbody></table><p>Equal values: any stable or unstable sort of equal elements is</p><p>conforming; <code>x[r]</code> is the same number.</p><h3>6.2 <code>median</code></h3><p><code>median</code> is defined as nearest-rank <code>p50</code>. It is not the mid-mean of</p><p>the two central values for even <code>n</code>.</p><h3>6.3 Decimal comparison</h3><p>When a later evaluator compares an aggregate to <code>decision_rule.threshold</code>,</p><p>both sides MUST be interpreted with <code>decision_rule.precision</code> using</p><p>fixed-precision decimal arithmetic from the <strong>original lexical</strong> decimal</p><p>strings, never via binary64 <code>float64</code>. Rounding is half away from zero.</p><p>This document does not require an implementation to evaluate expressions</p><p>(that is a later conformance point). It DOES require that a seal</p><p>validator parse <code>threshold</code> as such a decimal.</p><hr><h2>7. Attestation object</h2><p>An attestation is authored on the user&#39;s machine after an attempt. It</p><p>names a seal by digest. It MUST NOT contain an attempt number.</p><h3>7.1 JSON Schema (normative)</h3><pre><code>{
+  &#34;$schema&#34;: &#34;https://json-schema.org/draft/2020-12/schema&#34;,
+  &#34;$id&#34;: &#34;https://plimsoll.gautamkhosla.com/spec/prereg-v1/attestation.json&#34;,
+  &#34;title&#34;: &#34;PLIMSOLL attestation (prereg-v1)&#34;,
+  &#34;type&#34;: &#34;object&#34;,
+  &#34;additionalProperties&#34;: false,
+  &#34;required&#34;: [
+    &#34;plimsoll_version&#34;,
+    &#34;seal_hash&#34;,
+    &#34;created_at&#34;,
+    &#34;results&#34;,
+    &#34;n_evaluated&#34;,
+    &#34;canon_version&#34;
+  ],
+  &#34;properties&#34;: {
+    &#34;plimsoll_version&#34;: { &#34;const&#34;: &#34;prereg-v1&#34; },
+    &#34;canon_version&#34;: { &#34;const&#34;: &#34;plimsoll-canon-v1&#34; },
+    &#34;seal_hash&#34;: {
+      &#34;type&#34;: &#34;string&#34;,
+      &#34;pattern&#34;: &#34;^sha256:[0-9a-f]{64}$&#34;
+    },
+    &#34;created_at&#34;: { &#34;type&#34;: &#34;string&#34; },
+    &#34;n_evaluated&#34;: { &#34;type&#34;: &#34;integer&#34;, &#34;minimum&#34;: 0 },
+    &#34;results&#34;: {
+      &#34;type&#34;: &#34;array&#34;,
+      &#34;items&#34;: {
+        &#34;type&#34;: &#34;object&#34;,
+        &#34;additionalProperties&#34;: false,
+        &#34;required&#34;: [&#34;metric_id&#34;, &#34;aggregate&#34;, &#34;value&#34;],
+        &#34;properties&#34;: {
+          &#34;metric_id&#34;: { &#34;type&#34;: &#34;string&#34; },
+          &#34;aggregate&#34;: {
+            &#34;type&#34;: &#34;string&#34;,
+            &#34;enum&#34;: [
+              &#34;mean&#34;, &#34;median&#34;, &#34;min&#34;, &#34;max&#34;,
+              &#34;p10&#34;, &#34;p50&#34;, &#34;p90&#34;, &#34;p95&#34;,
+              &#34;count&#34;, &#34;pass_rate&#34;
+            ]
+          },
+          &#34;value&#34;: {
+            &#34;type&#34;: &#34;string&#34;,
+            &#34;description&#34;: &#34;Lexical decimal. MUST be a JSON string.&#34;
+          }
+        }
+      }
+    }
+  }
+}
+</code></pre><p>If a client submits an attestation containing <code>attempt</code> or any other</p><p>unknown top-level member, a conforming implementation MUST reject it.</p><p><code>seal_hash</code> MUST equal the canonical hash of a previously logged seal.</p><p><code>results[].value</code> MUST be a lexical decimal string. Implementations</p><p>MUST NOT coerce JSON numbers into <code>value</code>.</p><hr><h2>8. Attempt ledger</h2><p>The log stores, for each <code>seal_hash</code>, an ordered sequence of accepted</p><p>attestations.</p><p>1. Attempt numbers are <strong>assigned by the log</strong>, not by the client.</p><p>2. The first accepted attestation for a seal receives attempt <code>1</code>.</p><p>   Each subsequent accepted attestation for that seal receives <code>n+1</code>.</p><p>3. Numbers are monotonic and have no gaps among <strong>accepted</strong> entries.</p><p>   A rejected submission MUST NOT consume a number.</p><p>4. A client MUST NOT include <code>attempt</code> on the attestation. If present,</p><p>   reject.</p><p>5. Replaying the same attestation bytes MAY be rejected as a duplicate;</p><p>   it MUST NOT be assigned a new attempt number if rejected.</p><p>6. Anyone verifying an inclusion proof MUST be able to check the</p><p>   assigned attempt number against the log entry. The operator&#39;s API</p><p>   MUST NOT be the only way to learn the attempt number (the entry</p><p>   itself carries it).</p><hr><h2>9. Superseding seals</h2><p>A seal cannot be edited. To change a decision rule after a failed</p><p>attempt, the author publishes a <strong>new</strong> seal with:</p><pre><code>&#34;supersedes&#34;: {
+  &#34;seal_hash&#34;: &#34;sha256:…&#34;,
+  &#34;reason&#34;: &#34;human-readable reason&#34;
+}
+</code></pre><p>Rules:</p><p>1. <code>supersedes.seal_hash</code> MUST be the canonical hash of an existing</p><p>   seal. It MUST NOT equal the canonical hash of the new seal (no</p><p>   self-supersession).</p><p>2. <code>reason</code> MUST be non-empty.</p><p>3. The superseded seal remains in the log. Attestations against it</p><p>   remain. Supersession is an edge, not a delete, not an amendment.</p><p>4. No flag, environment variable, or paid tier MAY treat the old</p><p>   decision rule as rewritten in place.</p><hr><h2>10. Transmission constraint (normative)</h2><p>A conforming implementation MUST NOT receive, store, or transmit:</p><ul><li>dataset rows or files</li><li>model weights or model files</li><li>prompt text</li><li>model outputs or traces</li></ul><p>It MAY receive, store, or transmit digests, metadata (names, counts,</p><p>sampling labels, metric ids, lexical decimal result strings, verdicts),</p><p>signatures, and log inclusion proofs.</p><p>Prompt text and configuration files are hashed locally with</p><p>plimsoll-canon-v1. Dataset rows are hashed locally with</p><p>plimsoll-dataset-v1. Only the digests appear in seals.</p><hr><h2>11. Signing</h2><p>A <strong>signed seal</strong> is:</p><pre><code>{
+  &#34;seal&#34;: { &#34;…&#34;: &#34;the seal object of §4&#34; },
+  &#34;signature&#34;: &#34;&lt;base64&gt;&#34;
+}
+</code></pre><p><code>signature</code> is 64 raw Ed25519 signature bytes, encoded as unpadded or</p><p>padded Base64 (implementations MUST accept standard Base64). The</p><p>signed message is the <strong>plimsoll-canon-v1 canonical bytes</strong> of <code>seal</code></p><p>(the prefixed JCS of the seal object), not the <code>sha256:</code> string.</p><p>Verification: canonicalize <code>seal</code>, then `Ed25519.verify(public_key,</p><p>canonical_bytes, signature)`. Verification MUST succeed using only</p><p>the signed object and a public key; it MUST NOT require the operator&#39;s</p><p>log.</p><hr><h2>12. Conformance checklist</h2><p>An independent implementation of <strong>prereg-v1</strong> is conforming when it</p><p>can demonstrate all of the following.</p><p><strong>Seal</strong></p><ul><li>[ ] Accepts the example in §4.3 (JSON) and an equivalent YAML encoding.</li><li>[ ] Rejects any unknown top-level member.</li><li>[ ] Rejects <code>planned_attempts &lt; 1</code>.</li><li>[ ] Rejects <code>dataset.n &lt;= 0</code> or missing <code>dataset.sha256</code>.</li><li>[ ] Rejects <code>decision_rule.precision</code> outside <code>1..12</code>.</li><li>[ ] Rejects an expression that does not parse under §5.</li><li>[ ] Rejects an expression whose <code>metric_id</code> is not in <code>metrics[]</code>.</li><li>[ ] Computes <code>CanonicalHash</code> as §3 plimsoll-canon-v1 over the seal JSON.</li><li>[ ] Ed25519 sign/verify over canonical seal bytes as §11.</li></ul><p><strong>Expression language</strong></p><ul><li>[ ] Parses the valid examples in §5.3.</li><li>[ ] Rejects every invalid example in §5.3.</li><li>[ ] Lexer treats <code>&gt;=</code> as one token (not <code>&gt;</code> then <code>=</code>).</li><li>[ ] No code path implements <code>+</code>, <code>-</code> (binary), <code>*</code>, <code>/</code>, or calls.</li></ul><p><strong>Dataset identity</strong></p><ul><li>[ ] Implements plimsoll-dataset-v1 as a sorted multiset of</li></ul><p>      plimsoll-canon-v1 rows.</p><ul><li>[ ] Reordering rows does not change the digest.</li><li>[ ] Duplicating a row does change the digest.</li></ul><p><strong>Attestation and log</strong></p><ul><li>[ ] Rejects attestations that include <code>attempt</code>.</li><li>[ ] Assigns attempt numbers only on the log, starting at 1 per seal.</li><li>[ ] Stores <code>supersedes</code> as a new seal, leaving the old seal intact.</li></ul><p><strong>Privacy</strong></p><ul><li>[ ] No API accepts dataset bytes, model bytes, prompt text, or outputs.</li></ul><hr><h2>13. Test vectors (informative)</h2><p>Expression parse → OK: <code>acc.mean &gt;= 0.82</code></p><p>Expression parse → fail: <code>acc.mean + 1 &gt;= 0.82</code></p><p>Nearest-rank: <code>n=2</code>, <code>p=50</code> → rank <code>1</code>.</p><p>Decimal (precision 6): <code>0.82</code> equals <code>0.8200000000000001</code>; <code>0.82</code> does</p><p>not equal <code>0.821</code>.</p><hr><h2>13a. Transport and deployment (informative)</h2><p><code>prereg-v1</code> does <strong>not</strong> define HTTP URL shapes or hosting. Object schemas</p><p>(§4, §7), the attempt ledger (§8), and the transmission constraint (§10)</p><p>are unchanged.</p><p>The reference public deployment serves log <strong>reads</strong> as static path-keyed</p><p>files (for example <code>/proof/inclusion/{idx}</code> alongside the self-hosted</p><p>query form <code>/proof/inclusion?idx=</code>). That is an implementation choice</p><p>documented outside this specification; it does not alter digests,</p><p>signatures, or Merkle proofs. <strong>No <code>prereg-v1.1</code> bump is required.</strong></p><p><code>POST /submit</code> remains the sole write path where a deployment exposes one;</p><p>acceptance of a submission MAY be asynchronous (HTTP 202) provided the</p><p>eventually published entry matches the sealed object bytes.</p><hr><h2>14. Defensive publication</h2><p>This file was deposited as:</p><p><strong>Title:</strong> PLIMSOLL Pre-Registration and Attestation Specification, v1</p><p><strong>License:</strong> CC0-1.0</p><p><strong>Version identifier:</strong> prereg-v1</p><p><strong>Git tag:</strong> v0.1.0-spec</p><p><strong>Date:</strong> 26 August 2026</p><p><strong>DOI (all versions):</strong> 10.5281/zenodo.22107450</p><p><strong>DOI (this version):</strong> 10.5281/zenodo.22107451</p><p><strong>Record:</strong> https://zenodo.org/records/22107451</p><p><strong>Wayback archive (Zenodo record):</strong> https://web.archive.org/web/20260826072809/https://zenodo.org/records/22107451</p><p><strong>Wayback archive (raw SPEC at <code>v0.1.0-spec</code>):</strong> https://web.archive.org/web/20260826073230/https://raw.githubusercontent.com/GautamTalksDev/plimsoll/v0.1.0-spec/SPEC-PREREG.md</p></div>
+
+<footer>
+<p>The log is a public git repository. Anyone can clone it, replay every Merkle leaf and
+signature offline, and detect a rewritten history, with no trust in this operator required.
+Verification works against any conforming log, not only this one.</p>
+<p>Publishing to this log is permanent. Entries cannot be edited or deleted.
+Read the privacy notice before you publish.</p>
+<p>Specification CC0 · implementation Apache-2.0 ·
+<a href="https://github.com/GautamTalksDev/plimsoll">Source</a> ·
+<a href="https://github.com/GautamTalksDev/plimsoll/blob/main/PRIVACY.md">Privacy</a> ·
+<a href="https://github.com/GautamTalksDev/plimsoll/blob/main/TERMS.md">Terms</a> ·
+<a href="https://github.com/GautamTalksDev/plimsoll/blob/main/SECURITY.md">Security</a></p>
+</footer>
+</body></html>
